@@ -56,6 +56,9 @@ uint8_t* intermediateBuffer;
 int gif_height;
 int gif_width;
 
+// When to display the next frame
+long millisNextFrame;
+
 // Convert RGB565 to RGB332
 uint8_t convertRGB565toRGB332(uint16_t color)
 {
@@ -148,26 +151,14 @@ void GIFDraw(GIFDRAW *pDraw)
     }
 } /* GIFDraw() */
 
-void clearBuffer()
-{
-  uint8_t** pFrameBuffer = videoOut.getFrameBufferLines();
-  for(int i = 0; i < 240; i++)
-  {
-    memset(pFrameBuffer[i],0, 256);
-  }
-}
-
 void setup() {
   Serial.begin(115200);
 
   videoOut.begin();
 
-  // Clear both front and buffers
-  clearBuffer();
-  videoOut.waitForFrame();
-  clearBuffer();
-
   gif.begin(LITTLE_ENDIAN_PIXELS);
+
+  millisNextFrame = millis();
 
   intermediateBuffer = NULL;
   if (gif.open((uint8_t *)cat_and_galactic_squid_gif, cat_and_galactic_squid_gif_len, GIFDraw))
@@ -204,6 +195,15 @@ void setup() {
   }
 }
 
+void clearFrame()
+{
+  uint8_t** pFrameBuffer = videoOut.getFrameBufferLines();
+  for(int i = 0; i < 240; i++)
+  {
+    memset(pFrameBuffer[i],0, 256);
+  }
+}
+
 void copyIntermediateToFrame(uint16_t copyWidth)
 {
   uint8_t** pFrameBuffer = videoOut.getFrameBufferLines();
@@ -214,13 +214,20 @@ void copyIntermediateToFrame(uint16_t copyWidth)
 }
 
 void loop() {
-  while (gif.playFrame(true, NULL))
+  if (millis() > millisNextFrame)
   {
-    copyIntermediateToFrame(gif_width);
-    videoOut.waitForFrame();
+    int millisFrame;
+
+    if(!gif.playFrame(false, &millisFrame))
+    {
+      // No more frames, reset the loop to start again.
+      gif.reset();
+    }
+
+    millisNextFrame = millis() + millisFrame;
   }
-  // Don't forget to draw the final frame before reset!
+
+  clearFrame();
   copyIntermediateToFrame(gif_width);
   videoOut.waitForFrame();
-  gif.reset();
 }
