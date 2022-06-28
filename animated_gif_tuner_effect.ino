@@ -213,17 +213,40 @@ void clearFrame()
   }
 }
 
-void copyIntermediateToFrame(uint16_t offset_h, uint16_t offset_v)
+void copyIntermediateToFrame(int offset_h, int offset_v)
 {
   uint8_t** pFrameBuffer = videoOut.getFrameBufferLines();
   for(int i = 0; i < gif_height; i++)
   {
-    memcpy(pFrameBuffer[i+offset_v],&(intermediateBuffer[i*offset_h]),gif_width);
+    memcpy(pFrameBuffer[(i+offset_v)%240],&(intermediateBuffer[i*offset_h]),gif_width);
   }
 }
 
 void loop() {
-  int horizontalOffset = map(analogRead(13), 0, 4095, 275, 225);
+  int horizontalOffset = map(analogRead(13), 0, 4095, gif_width+25, gif_width-25);
+
+  if (horizontalOffset <= gif_width-3)
+  {
+    verticalRoll -= verticalRollSpeed;
+    if (verticalOffset + verticalRoll < 0)
+    {
+      // Keep verticalOffset + verticalRoll within range of screen.
+      verticalRoll += 240;
+    }
+  }
+  else if (horizontalOffset >= gif_width+3)
+  {
+    verticalRoll += verticalRollSpeed;
+    if (verticalOffset + verticalRoll > 240)
+    {
+      // Keep verticalOffset + verticalRoll within range of screen.
+      verticalRoll -= 240;
+    }
+  }
+  else
+  {
+    verticalRoll = 0;
+  }
 
   if (millis() > millisNextFrame)
   {
@@ -239,6 +262,6 @@ void loop() {
   }
 
   clearFrame();
-  copyIntermediateToFrame(horizontalOffset, verticalOffset);
+  copyIntermediateToFrame(horizontalOffset, verticalOffset + verticalRoll);
   videoOut.waitForFrame();
 }
