@@ -47,8 +47,14 @@ SOFTWARE.
 ESP_8_BIT_composite videoOut(true /* = NTSC */);
 AnimatedGIF gif;
 
-// Vertical margin to compensate for aspect ratio
-const int margin = 29;
+// Frame to frame vertical delta when simulating vertical sync rolling
+const int verticalRollSpeed = 6;
+
+// The most recently used vertical roll offset, incremented by verticalRollSpeed per frame.
+int verticalRoll;
+
+// Vertical offset to use when picture is "in tune"
+int verticalOffset;
 
 // Intermediate buffer filled with data from AnimatedGIF
 // to copy into display buffer.
@@ -193,6 +199,9 @@ void setup() {
     gif_height = 0;
     Serial.println("Failed to open GIF data");
   }
+
+  verticalRoll = 0;
+  verticalOffset = (240-gif_height)/2;
 }
 
 void clearFrame()
@@ -204,16 +213,18 @@ void clearFrame()
   }
 }
 
-void copyIntermediateToFrame(uint16_t copyWidth)
+void copyIntermediateToFrame(uint16_t offset_h, uint16_t offset_v)
 {
   uint8_t** pFrameBuffer = videoOut.getFrameBufferLines();
   for(int i = 0; i < gif_height; i++)
   {
-    memcpy(pFrameBuffer[i+margin],&(intermediateBuffer[i*copyWidth]),copyWidth);
+    memcpy(pFrameBuffer[i+offset_v],&(intermediateBuffer[i*offset_h]),gif_width);
   }
 }
 
 void loop() {
+  int horizontalOffset = map(analogRead(13), 0, 4095, 275, 225);
+
   if (millis() > millisNextFrame)
   {
     int millisFrame;
@@ -228,6 +239,6 @@ void loop() {
   }
 
   clearFrame();
-  copyIntermediateToFrame(gif_width);
+  copyIntermediateToFrame(horizontalOffset, verticalOffset);
   videoOut.waitForFrame();
 }
