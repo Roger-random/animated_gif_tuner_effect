@@ -212,10 +212,31 @@ void clearFrame()
 
 void copyIntermediateToFrame(int offset_h, int offset_v)
 {
+  int bufferEndIndex = gif_width * gif_height;
+  int lastFullLineIndex = bufferEndIndex - gif_width;
+  int currentIndex;
+
   uint8_t** pFrameBuffer = videoOut.getFrameBufferLines();
   for(int i = 0; i < gif_height; i++)
   {
-    memcpy(pFrameBuffer[(i+offset_v)%240],&(intermediateBuffer[i*offset_h]),gif_width);
+    currentIndex = i*offset_h;
+
+    // Make sure we don't copy garbage memory outside of intermediateBuffer range
+    if (currentIndex < lastFullLineIndex)
+    {
+      // We can safely copy a full line
+      memcpy(pFrameBuffer[(i+offset_v)%240],&(intermediateBuffer[currentIndex]),gif_width);
+    }
+    else if (currentIndex < bufferEndIndex)
+    {
+      // We can copy a partial line
+      memcpy(pFrameBuffer[(i+offset_v)%240],&(intermediateBuffer[currentIndex]),bufferEndIndex-currentIndex-1);
+    }
+    else
+    {
+      // No more valid image lines to copy, stop the loop.
+      break;
+    }
   }
 }
 
