@@ -11,11 +11,11 @@ Using the following Arduino libraries:
 * ESP_8_BIT Color Composite Video by Roger Cheng:
   https://github.com/Roger-random/ESP_8_BIT_composite
 
-An animated GIF is decoded into an intermediate buffer, which is then passed
-into Adafruit GFX drawBitmap() function. The bitmap is drawn with a width value
+An animated GIF is decoded into an intermediate buffer, which is then copied
+into the display buffer. The copy is done with a variable image stride width
 intentionally not always the correct width value. When the width used is not
 the correct width, the bitmap is drawn with an error that superficially
-resembles analog TV tuning. This error is the intended effect of the sketch.
+resembles analog TV tuning. This error is the intended effect of this sketch.
 
 Copyright (c) Roger Cheng
 
@@ -44,11 +44,28 @@ SOFTWARE.
 #include <ESP_8_BIT_GFX.h>
 #include "cat_and_galactic_squid.h"
 
-ESP_8_BIT_GFX videoOut(true /* = NTSC */, 16 /* = RGB565 colors will be downsampled to 8-bit RGB332 */);
+ESP_8_BIT_composite videoOut(true /* = NTSC */);
 AnimatedGIF gif;
 
 // Vertical margin to compensate for aspect ratio
 const int margin = 29;
+
+// Intermediate buffer filled with data from AnimatedGIF
+// to copy into display buffer.
+uint8_t* intermediateBuffer;
+int gif_height;
+int gif_width;
+
+// Convert RGB565 to RGB332
+uint8_t convertRGB565toRGB332(uint16_t color)
+{
+  // Extract most significant 3 red, 3 green and 2 blue bits.
+  return (uint8_t)(
+        (color & 0xE000) >> 8 |
+        (color & 0x0700) >> 6 |
+        (color & 0x0018) >> 3
+      );
+}
 
 // Draw a line of image to ESP_8_BIT_GFX frame buffer
 void GIFDraw(GIFDRAW *pDraw)
@@ -98,7 +115,7 @@ void GIFDraw(GIFDRAW *pDraw)
         if (iCount) // any opaque pixels?
         {
           for(int xOffset = 0; xOffset < iCount; xOffset++ ){
-            videoOut.drawPixel(pDraw->iX + x + xOffset, margin + y, usTemp[xOffset]);
+            intermediateBuffer[y*gif_width + pDraw->iX + x + xOffset] = convertRGB565toRGB332(usTemp[xOffset]);
           }
           x += iCount;
           iCount = 0;
@@ -126,30 +143,84 @@ void GIFDraw(GIFDRAW *pDraw)
       // Translate the 8-bit pixels through the RGB565 palette (already byte reversed)
       for (x=0; x<pDraw->iWidth; x++)
       {
-        videoOut.drawPixel(x,margin + y, usPalette[*s++]);
+        intermediateBuffer[y*gif_width + x] = convertRGB565toRGB332(usPalette[*s++]);
       }
     }
 } /* GIFDraw() */
 
-void setup() {
-  videoOut.begin();
-  videoOut.copyAfterSwap = true; // gif library depends on data from previous buffer
+void clearBuffer()
+{
+  uint8_t** pFrameBuffer = videoOut.getFrameBufferLines();
+  for(int i = 0; i < 240; i++)
+  {
+    memset(pFrameBuffer[i],0, 256);
+  }
+}
 
-  // Clear screen with black
-  videoOut.fillScreen(0);
+void setup() {
+  Serial.begin(115200);
+
+  videoOut.begin();
+
+  // Clear both front and buffers
+  clearBuffer();
   videoOut.waitForFrame();
+  clearBuffer();
 
   gif.begin(LITTLE_ENDIAN_PIXELS);
+
+  intermediateBuffer = NULL;
+  if (gif.open((uint8_t *)cat_and_galactic_squid_gif, cat_and_galactic_squid_gif_len, GIFDraw))
+  {
+    uint8_t* allocated = NULL;
+    bool allocateSuccess = true;
+
+    gif_width = gif.getCanvasWidth();
+    gif_height = gif.getCanvasHeight();
+    Serial.print("Successfully opened GIF data ");
+    Serial.print(gif_width);
+    Serial.print(" wide and ");
+    Serial.print(gif_height);
+    Serial.println(" high.");
+
+    allocated = new uint8_t[gif_height*gif_width];
+    if (NULL==allocated)
+    {
+      Serial.println("Allocation failed: buffer line array");
+      allocateSuccess = false;
+    }
+    if (allocateSuccess)
+    {
+      intermediateBuffer = allocated;
+      allocated = NULL;
+      Serial.println("Successfully allocated intermediate buffer");
+    }
+  }
+  else
+  {
+    gif_width = 0;
+    gif_height = 0;
+    Serial.println("Failed to open GIF data");
+  }
+}
+
+void copyIntermediateToFrame(uint16_t copyWidth)
+{
+  uint8_t** pFrameBuffer = videoOut.getFrameBufferLines();
+  for(int i = 0; i < gif_height; i++)
+  {
+    memcpy(pFrameBuffer[i+margin],&(intermediateBuffer[i*copyWidth]),copyWidth);
+  }
 }
 
 void loop() {
-  if (gif.open((uint8_t *)cat_and_galactic_squid_gif, cat_and_galactic_squid_gif_len, GIFDraw))
+  while (gif.playFrame(true, NULL))
   {
-    while (gif.playFrame(true, NULL))
-    {
-      videoOut.waitForFrame();
-    }
+    copyIntermediateToFrame(gif_width);
     videoOut.waitForFrame();
-    gif.close();
   }
+  // Don't forget to draw the final frame before reset!
+  copyIntermediateToFrame(gif_width);
+  videoOut.waitForFrame();
+  gif.reset();
 }
