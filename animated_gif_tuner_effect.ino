@@ -47,10 +47,7 @@ SOFTWARE.
 ESP_8_BIT_composite videoOut(true /* = NTSC */);
 AnimatedGIF gif;
 
-// Frame to frame vertical delta when simulating vertical sync rolling
-const int verticalRollSpeed = 6;
-
-// The most recently used vertical roll offset, incremented by verticalRollSpeed per frame.
+// The most recently used vertical roll offset.
 int verticalRoll;
 
 // Vertical offset to use when picture is "in tune"
@@ -225,19 +222,15 @@ void copyIntermediateToFrame(int offset_h, int offset_v)
 void loop() {
   int horizontalOffset = map(analogRead(13), 0, 4095, gif_width+25, gif_width-25);
 
-  if (horizontalOffset <= gif_width-3)
+  if (horizontalOffset < gif_width-3 || horizontalOffset > gif_width+3)
   {
-    verticalRoll -= verticalRollSpeed;
+    verticalRoll += horizontalOffset-gif_width;
     if (verticalOffset + verticalRoll < 0)
     {
       // Keep verticalOffset + verticalRoll within range of screen.
       verticalRoll += 240;
     }
-  }
-  else if (horizontalOffset >= gif_width+3)
-  {
-    verticalRoll += verticalRollSpeed;
-    if (verticalOffset + verticalRoll > 240)
+    else if (verticalOffset + verticalRoll > 240)
     {
       // Keep verticalOffset + verticalRoll within range of screen.
       verticalRoll -= 240;
