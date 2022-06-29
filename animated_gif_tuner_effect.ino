@@ -47,7 +47,7 @@ SOFTWARE.
 ESP_8_BIT_composite videoOut(true /* = NTSC */);
 AnimatedGIF gif;
 
-// The most recently used vertical roll offset.
+// The most recently used vertical roll offset. Zero when "in tune".
 int verticalRoll;
 
 // Vertical offset to use when picture is "in tune"
@@ -56,6 +56,8 @@ int verticalOffset;
 // Intermediate buffer filled with data from AnimatedGIF
 // to copy into display buffer.
 uint8_t* intermediateBuffer;
+
+// Width and height of decoded GIF
 int gif_height;
 int gif_width;
 
@@ -166,6 +168,7 @@ void setup() {
   intermediateBuffer = NULL;
   if (gif.open((uint8_t *)cat_and_galactic_squid_gif, cat_and_galactic_squid_gif_len, GIFDraw))
   {
+    // Successfully parsed GIF data, allocate intermediate buffer based on GIF image size
     uint8_t* allocated = NULL;
     bool allocateSuccess = true;
 
@@ -201,6 +204,7 @@ void setup() {
   verticalOffset = (240-gif_height)/2;
 }
 
+// Clear output frame buffer to black
 void clearFrame()
 {
   uint8_t** pFrameBuffer = videoOut.getFrameBufferLines();
@@ -210,6 +214,7 @@ void clearFrame()
   }
 }
 
+// Copy intermediate GIF data to output frame buffer using given horizontal and vertical offsets
 void copyIntermediateToFrame(int offset_h, int offset_v)
 {
   int bufferEndIndex = gif_width * gif_height;
@@ -241,11 +246,15 @@ void copyIntermediateToFrame(int offset_h, int offset_v)
 }
 
 void loop() {
+  // Horizontal offset is directly mapped from potentiometer position on pin 13.
   int horizontalOffset = map(analogRead(13), 0, 4095, gif_width+25, gif_width-25);
 
+  // Vertical roll effect is calculated based on horizontal offset
   if (horizontalOffset < gif_width-3 || horizontalOffset > gif_width+3)
   {
+    // If horizontal offset is far from actual gif width, add a vertical roll
     verticalRoll += horizontalOffset-gif_width;
+
     if (verticalOffset + verticalRoll < 0)
     {
       // Keep verticalOffset + verticalRoll within range of screen.
@@ -259,9 +268,12 @@ void loop() {
   }
   else
   {
+    // No vertical roll if horizontal offset is close to actual width.
     verticalRoll = 0;
   }
 
+  // If it is time for the next animated GIF frame to be shown, advance a
+  // frame or reset back to beginning.
   if (millis() > millisNextFrame)
   {
     int millisFrame;
@@ -272,9 +284,11 @@ void loop() {
       gif.reset();
     }
 
+    // Track the time for us to show the next frame.
     millisNextFrame = millis() + millisFrame;
   }
 
+  // Output the current animation frame with veritical/horizontal offsets.
   clearFrame();
   copyIntermediateToFrame(horizontalOffset, verticalOffset + verticalRoll);
   videoOut.waitForFrame();
